@@ -1,0 +1,772 @@
+name: Deploy Simple Relay
+
+on:
+  workflow_call:
+    inputs:
+      deploy_environment:
+        required: true
+        type: string
+        description: 'Environment to deploy to (production or staging)'
+      simple_relay_ref:
+        required: false
+        type: string
+        default: 'main'
+        description: 'Branch or ref to deploy from simple-relay repo'
+
+env:
+  TF_VERSION: '1.5.0'
+  TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: us-central1
+
+jobs:
+  terraform-plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.deploy_environment }}
+    outputs:
+      simple_relay_sha: ${{ steps.get-sha.outputs.sha }}
+    
+    steps:
+    - name: Checkout simple-relay repository
+      uses: actions/checkout@v4
+      with:
+        repository: wuyq0808/simple-relay
+        ref: ${{ inputs.simple_relay_ref }}
+        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+
+    - name: Get simple-relay commit SHA
+      id: get-sha
+      run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: Google Auth
+      uses: 'google-github-actions/auth@v2'
+      with:
+        credentials_json: '${{ secrets.GCP_SA_KEY }}'
+
+    - name: Setup Google Cloud SDK
+      uses: 'google-github-actions/setup-gcloud@v2'
+
+    - name: Terraform Init
+      working-directory: ./terraform
+      run: |
+        terraform init \
+          -backend-config="bucket=simple-relay-${{ inputs.deploy_environment }}" \
+          -backend-config="prefix=terraform-state"
+
+
+    - name: Terraform Validate
+      working-directory: ./terraform
+      run: terraform validate
+
+    - name: Terraform Plan
+      working-directory: ./terraform
+      env:
+        TF_VAR_api_base_url: ${{ secrets.API_BASE_URL }}
+        TF_VAR_official_base_url: ${{ secrets.OFFICIAL_BASE_URL }}
+        TF_VAR_image_tag: ${{ steps.get-sha.outputs.sha }}
+        TF_VAR_service_name: simple-relay
+        TF_VAR_billing_service_name: simple-relay-billing
+        TF_VAR_frontend_service_name: simple-relay-frontend
+        TF_VAR_outbound_service_1_name: simple-relay-outbound-1
+        TF_VAR_outbound_service_2_name: simple-relay-outbound-2
+        TF_VAR_firestore_database_name: simple-relay-db
+        TF_VAR_deploy_environment: ${{ inputs.deploy_environment }}
+        TF_VAR_api_secret_key: ${{ secrets.API_SECRET_KEY }}
+        TF_VAR_resend_api_key: ${{ inputs.deploy_environment == 'production' && secrets.RESEND_API_KEY_PRODUCTION || secrets.RESEND_API_KEY_STAGING }}
+        TF_VAR_resend_from_email: ${{ secrets.RESEND_FROM_EMAIL }}
+        TF_VAR_cookie_secret: ${{ inputs.deploy_environment == 'production' && secrets.COOKIE_SECRET_PRODUCTION || secrets.COOKIE_SECRET_STAGING }}
+        TF_VAR_wechat_app_id: ${{ secrets.WECHAT_APP_ID }}
+        TF_VAR_wechat_mch_id: ${{ secrets.WECHAT_MCH_ID }}
+        TF_VAR_wechat_mch_api_v3_key: ${{ secrets.WECHAT_MCH_API_V3_KEY }}
+        TF_VAR_wechat_mch_serial_no: ${{ secrets.WECHAT_MCH_SERIAL_NO }}
+        TF_VAR_wechat_notify_url: ${{ inputs.deploy_environment == 'production' && secrets.WECHAT_NOTIFY_URL_PRODUCTION || secrets.WECHAT_NOTIFY_URL_STAGING }}
+        TF_VAR_wechat_mch_private_key_base64: ${{ secrets.WECHAT_MCH_PRIVATE_KEY_BASE64 }}
+        TF_VAR_wechat_pay_public_key_base64: ${{ secrets.WECHAT_PAY_PUBLIC_KEY_BASE64 }}
+        TF_VAR_wechat_pay_public_key_id: ${{ secrets.WECHAT_PAY_PUBLIC_KEY_ID }}
+        TF_VAR_wechat_platform_cert_base64: ${{ secrets.WECHAT_PLATFORM_CERT_BASE64 }}
+        TF_VAR_wechat_platform_cert_serial_no: ${{ secrets.WECHAT_PLATFORM_CERT_SERIAL_NO }}
+        TF_VAR_wechat_open_app_id: ${{ secrets.WECHAT_OPEN_APP_ID }}
+        TF_VAR_wechat_open_app_secret: ${{ secrets.WECHAT_OPEN_APP_SECRET }}
+        TF_VAR_wechat_redirect_uri: ${{ inputs.deploy_environment == 'production' && secrets.WECHAT_REDIRECT_URI_PRODUCTION || secrets.WECHAT_REDIRECT_URI_STAGING }}
+      run: terraform plan -input=false -no-color
+
+  docker-build-backend:
+    name: Build and Push Backend Image
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.deploy_environment }}
+    outputs:
+      simple_relay_sha: ${{ steps.get-sha.outputs.sha }}
+    
+    steps:
+    - name: Checkout simple-relay repository
+      uses: actions/checkout@v4
+      with:
+        repository: wuyq0808/simple-relay
+        ref: ${{ inputs.simple_relay_ref }}
+        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+
+    - name: Get simple-relay commit SHA
+      id: get-sha
+      run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+    - name: Google Auth
+      uses: 'google-github-actions/auth@v2'
+      with:
+        credentials_json: '${{ secrets.GCP_SA_KEY }}'
+
+    - name: Setup Google Cloud SDK
+      uses: 'google-github-actions/setup-gcloud@v2'
+
+    - name: Docker Auth
+      id: docker-auth
+      uses: 'docker/login-action@v3'
+      with:
+        registry: ${{ env.REGION }}-docker.pkg.dev
+        username: _json_key
+        password: ${{ secrets.GCP_SA_KEY }}
+
+    - name: Build and Push Backend Container
+      working-directory: ./
+      run: |-
+        docker build --platform linux/amd64 -f apps/backend/Dockerfile -t "${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/simple-relay/simple-relay:${{ steps.get-sha.outputs.sha }}" ./
+        docker push "${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/simple-relay/simple-relay:${{ steps.get-sha.outputs.sha }}"
+
+  docker-build-billing:
+    name: Build and Push Billing Image
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.deploy_environment }}
+    
+    steps:
+    - name: Checkout simple-relay repository
+      uses: actions/checkout@v4
+      with:
+        repository: wuyq0808/simple-relay
+        ref: ${{ inputs.simple_relay_ref }}
+        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+
+    - name: Get simple-relay commit SHA
+      id: get-sha
+      run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+    - name: Google Auth
+      uses: 'google-github-actions/auth@v2'
+      with:
+        credentials_json: '${{ secrets.GCP_SA_KEY }}'
+
+    - name: Setup Google Cloud SDK
+      uses: 'google-github-actions/setup-gcloud@v2'
+
+    - name: Docker Auth
+      id: docker-auth
+      uses: 'docker/login-action@v3'
+      with:
+        registry: ${{ env.REGION }}-docker.pkg.dev
+        username: _json_key
+        password: ${{ secrets.GCP_SA_KEY }}
+
+    - name: Build and Push Billing Container
+      working-directory: ./
+      run: |-
+        docker build --platform linux/amd64 -f apps/billing/Dockerfile -t "${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/simple-relay/simple-billing:${{ steps.get-sha.outputs.sha }}" ./
+        docker push "${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/simple-relay/simple-billing:${{ steps.get-sha.outputs.sha }}"
+
+  docker-build-outbound:
+    name: Build and Push Outbound Image
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.deploy_environment }}
+    
+    steps:
+    - name: Checkout simple-relay repository
+      uses: actions/checkout@v4
+      with:
+        repository: wuyq0808/simple-relay
+        ref: ${{ inputs.simple_relay_ref }}
+        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+
+    - name: Get simple-relay commit SHA
+      id: get-sha
+      run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+    - name: Google Auth
+      uses: 'google-github-actions/auth@v2'
+      with:
+        credentials_json: '${{ secrets.GCP_SA_KEY }}'
+
+    - name: Setup Google Cloud SDK
+      uses: 'google-github-actions/setup-gcloud@v2'
+
+    - name: Docker Auth
+      id: docker-auth
+      uses: 'docker/login-action@v3'
+      with:
+        registry: ${{ env.REGION }}-docker.pkg.dev
+        username: _json_key
+        password: ${{ secrets.GCP_SA_KEY }}
+
+    - name: Build and Push Outbound Container
+      working-directory: ./apps/outbound
+      run: |-
+        docker build --platform linux/amd64 -t "${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/simple-relay/simple-relay-outbound:${{ steps.get-sha.outputs.sha }}" .
+        docker push "${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/simple-relay/simple-relay-outbound:${{ steps.get-sha.outputs.sha }}"
+
+  docker-build-frontend:
+    name: Build and Push Frontend Image
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.deploy_environment }}
+    env:
+      BACKEND_URL: ${{ inputs.deploy_environment == 'production' && 'https://api.aifastlane.net' || 'https://staging-api.aifastlane.net' }}
+    
+    steps:
+    - name: Checkout simple-relay repository
+      uses: actions/checkout@v4
+      with:
+        repository: wuyq0808/simple-relay
+        ref: ${{ inputs.simple_relay_ref }}
+        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+
+    - name: Get simple-relay commit SHA
+      id: get-sha
+      run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+    - name: Google Auth
+      uses: 'google-github-actions/auth@v2'
+      with:
+        credentials_json: '${{ secrets.GCP_SA_KEY }}'
+
+    - name: Setup Google Cloud SDK
+      uses: 'google-github-actions/setup-gcloud@v2'
+
+    - name: Docker Auth
+      id: docker-auth
+      uses: 'docker/login-action@v3'
+      with:
+        registry: ${{ env.REGION }}-docker.pkg.dev
+        username: _json_key
+        password: ${{ secrets.GCP_SA_KEY }}
+
+    - name: Build and Push Frontend Container
+      working-directory: ./apps/frontend
+      run: |-
+        docker build --platform linux/amd64 --build-arg VITE_BACKEND_URL="${{ env.BACKEND_URL }}" -t "${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/simple-relay/simple-frontend:${{ steps.get-sha.outputs.sha }}" .
+        docker push "${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/simple-relay/simple-frontend:${{ steps.get-sha.outputs.sha }}"
+
+  backend-e2e-tests:
+    name: Backend E2E Tests
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout simple-relay repository
+      uses: actions/checkout@v4
+      with:
+        repository: wuyq0808/simple-relay
+        ref: ${{ inputs.simple_relay_ref }}
+        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+        cache: true
+        cache-dependency-path: apps/backend/go.sum
+
+    - name: Start Firestore Emulator
+      run: |
+        cd apps/backend/e2e_test
+        docker compose -f docker-compose.test.yml up -d
+
+        # Wait for Firestore to be ready
+        echo "Waiting for Firestore emulator to start..."
+        for i in {1..30}; do
+          if curl -s http://localhost:8080 > /dev/null 2>&1; then
+            echo "Firestore emulator is ready"
+            break
+          fi
+          if [ $i -eq 30 ]; then
+            echo "Firestore emulator failed to start"
+            docker compose -f docker-compose.test.yml logs
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Start Backend Server
+      run: |
+        cd apps/backend
+        FIRESTORE_EMULATOR_HOST=localhost:8080 \
+        GCP_PROJECT_ID=test-project \
+        FIRESTORE_DATABASE_NAME="(default)" \
+        PORT=8888 \
+        API_SECRET_KEY=test-secret-key \
+        OUTBOUND_SERVICE_URL_1=http://127.0.0.1:9001 \
+        BILLING_SERVICE_URL=http://127.0.0.1:9002 \
+        GCE_METADATA_HOST=127.0.0.1:9003 \
+        go run ./cmd &
+
+        # Wait for backend to be ready
+        echo "Waiting for backend server to start..."
+        for i in {1..30}; do
+          if curl -s http://localhost:8888/health > /dev/null 2>&1; then
+            echo "Backend server is ready"
+            break
+          fi
+          if [ $i -eq 30 ]; then
+            echo "Backend server failed to start"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Run E2E Tests
+      working-directory: ./apps/backend
+      run: go test -v ./e2e_test/... -count=1
+
+    - name: Stop Services
+      if: always()
+      run: |
+        pkill -f "go run ./cmd" || true
+        cd apps/backend/e2e_test
+        docker compose -f docker-compose.test.yml down
+
+    - name: Upload test logs on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: backend-e2e-test-logs
+        path: |
+          apps/backend/bin/
+          apps/backend/e2e_test/
+
+  billing-e2e-tests:
+    name: Billing E2E Tests
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout simple-relay repository
+      uses: actions/checkout@v4
+      with:
+        repository: wuyq0808/simple-relay
+        ref: ${{ inputs.simple_relay_ref }}
+        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+        cache: true
+        cache-dependency-path: apps/billing/go.sum
+
+    - name: Start Firestore Emulator
+      run: |
+        cd apps/billing/e2e_test
+        docker compose -f docker-compose.test.yml up -d
+
+        # Wait for Firestore to be ready
+        echo "Waiting for Firestore emulator to start..."
+        for i in {1..30}; do
+          if curl -s http://localhost:8080 > /dev/null 2>&1; then
+            echo "Firestore emulator is ready"
+            break
+          fi
+          if [ $i -eq 30 ]; then
+            echo "Firestore emulator failed to start"
+            docker compose -f docker-compose.test.yml logs
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Start Billing Server
+      run: |
+        cd apps/billing
+        FIRESTORE_EMULATOR_HOST=localhost:8080 \
+        GCP_PROJECT_ID=test-project \
+        FIRESTORE_DATABASE_NAME="(default)" \
+        PORT=8083 \
+        E2E_TEST_NO_CONFIG_CACHE=true \
+        go run ./cmd &
+
+        # Wait for billing to be ready
+        echo "Waiting for billing server to start..."
+        for i in {1..30}; do
+          if curl -s http://localhost:8083/health > /dev/null 2>&1; then
+            echo "Billing server is ready"
+            break
+          fi
+          if [ $i -eq 30 ]; then
+            echo "Billing server failed to start"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Run E2E Tests
+      working-directory: ./apps/billing
+      run: go test -v ./e2e_test/... -count=1
+
+    - name: Stop Services
+      if: always()
+      run: |
+        pkill -f "go run ./cmd" || true
+        cd apps/billing/e2e_test
+        docker compose -f docker-compose.test.yml down
+
+    - name: Upload test logs on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: billing-e2e-test-logs
+        path: |
+          apps/billing/bin/
+          apps/billing/e2e_test/
+
+  lint-backend:
+    name: Lint Backend
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout simple-relay repository
+      uses: actions/checkout@v4
+      with:
+        repository: wuyq0808/simple-relay
+        ref: ${{ inputs.simple_relay_ref }}
+        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+
+    - name: Install golangci-lint
+      run: |
+        # Install from source to match Go 1.24
+        go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+    - name: Lint Backend
+      working-directory: ./apps/backend
+      run: golangci-lint run --timeout=5m
+
+  lint-billing:
+    name: Lint Billing
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout simple-relay repository
+      uses: actions/checkout@v4
+      with:
+        repository: wuyq0808/simple-relay
+        ref: ${{ inputs.simple_relay_ref }}
+        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+
+    - name: Install golangci-lint
+      run: |
+        # Install from source to match Go 1.24
+        go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+    - name: Lint Billing
+      working-directory: ./apps/billing
+      run: golangci-lint run --timeout=5m
+
+  lint-outbound:
+    name: Lint Outbound
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout simple-relay repository
+      uses: actions/checkout@v4
+      with:
+        repository: wuyq0808/simple-relay
+        ref: ${{ inputs.simple_relay_ref }}
+        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+
+    - name: Install golangci-lint
+      run: |
+        # Install from source to match Go 1.24
+        go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+    - name: Lint Outbound
+      working-directory: ./apps/outbound
+      run: golangci-lint run --timeout=5m
+
+  test-backend:
+    name: Backend Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout simple-relay repository
+      uses: actions/checkout@v4
+      with:
+        repository: wuyq0808/simple-relay
+        ref: ${{ inputs.simple_relay_ref }}
+        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+        cache: true
+        cache-dependency-path: apps/backend/go.sum
+
+    - name: Run Backend Unit Tests
+      working-directory: ./apps/backend
+      run: go test -v $(go list ./... | grep -v /e2e_test) -count=1
+
+  test-billing:
+    name: Billing Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout simple-relay repository
+      uses: actions/checkout@v4
+      with:
+        repository: wuyq0808/simple-relay
+        ref: ${{ inputs.simple_relay_ref }}
+        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+        cache: true
+        cache-dependency-path: apps/billing/go.sum
+
+    - name: Run Billing Unit Tests
+      working-directory: ./apps/billing
+      run: go test -v $(go list ./... | grep -v /e2e_test) -count=1
+
+  test-frontend:
+    name: Frontend Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout simple-relay repository
+      uses: actions/checkout@v4
+      with:
+        repository: wuyq0808/simple-relay
+        ref: ${{ inputs.simple_relay_ref }}
+        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: apps/frontend/package-lock.json
+
+    - name: Install dependencies
+      working-directory: ./apps/frontend
+      run: npm ci
+
+    - name: Run Frontend Unit Tests
+      working-directory: ./apps/frontend
+      run: npm test
+
+  lint-frontend:
+    name: Lint Frontend
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout simple-relay repository
+      uses: actions/checkout@v4
+      with:
+        repository: wuyq0808/simple-relay
+        ref: ${{ inputs.simple_relay_ref }}
+        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: apps/frontend/package-lock.json
+
+    - name: Install dependencies
+      working-directory: ./apps/frontend
+      run: npm ci
+
+    - name: Lint Frontend (ESLint)
+      working-directory: ./apps/frontend
+      run: npm run lint
+
+    - name: Lint Frontend (Stylelint)
+      working-directory: ./apps/frontend
+      run: npm run stylelint
+
+  frontend-e2e-tests:
+    name: Frontend E2E Tests
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout simple-relay repository
+      uses: actions/checkout@v4
+      with:
+        repository: wuyq0808/simple-relay
+        ref: ${{ inputs.simple_relay_ref }}
+        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: apps/frontend/package-lock.json
+
+    - name: Install dependencies
+      working-directory: ./apps/frontend
+      run: npm ci
+
+    - name: Start Firestore Emulator
+      run: |
+        cd apps/frontend/e2e_test
+        docker compose -f docker-compose.test.yml up -d
+
+        # Wait for Firestore to be ready
+        echo "Waiting for Firestore emulator to start..."
+        for i in {1..30}; do
+          if curl -s http://localhost:8080 > /dev/null 2>&1; then
+            echo "Firestore emulator is ready"
+            break
+          fi
+          if [ $i -eq 30 ]; then
+            echo "Firestore emulator failed to start"
+            docker compose -f docker-compose.test.yml logs
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Build Frontend Server
+      working-directory: ./apps/frontend
+      run: npm run build:server
+
+    - name: Start Frontend Server
+      run: |
+        cd apps/frontend
+        FIRESTORE_EMULATOR_HOST=localhost:8080 \
+        GCP_PROJECT_ID=test-project \
+        FIRESTORE_DATABASE_NAME="(default)" \
+        PORT=3004 \
+        COOKIE_SECRET=test-cookie-secret \
+        DEPLOYMENT_ENV=development \
+        RESEND_API_KEY=test_key \
+        RESEND_BASE_URL=http://localhost:3099 \
+        WECHAT_APP_ID=test_app_id \
+        WECHAT_MCH_ID=test_mch_id \
+        WECHAT_MCH_API_V3_KEY=test_api_v3_key_32_bytes_long!! \
+        WECHAT_MCH_SERIAL_NO=test_serial_no \
+        WECHAT_OPEN_APP_ID=test_open_app_id \
+        WECHAT_OPEN_APP_SECRET=test_open_app_secret \
+        WECHAT_API_BASE_URL=http://localhost:9100 \
+        WECHAT_OAUTH_BASE_URL=http://localhost:9100 \
+        WECHAT_REDIRECT_URI=http://localhost:3004/api/wechat/callback \
+        node dist/server/index.js &
+
+        # Wait for frontend to be ready
+        echo "Waiting for frontend server to start..."
+        for i in {1..60}; do
+          if curl -s http://localhost:3004/api/health > /dev/null 2>&1; then
+            echo "Frontend server is ready"
+            break
+          fi
+          if [ $i -eq 60 ]; then
+            echo "Frontend server failed to start"
+            exit 1
+          fi
+          sleep 2
+        done
+
+    - name: Run E2E Tests
+      working-directory: ./apps/frontend
+      run: npm run test:e2e
+
+    - name: Stop Services
+      if: always()
+      run: |
+        pkill -f "node dist/server/index.js" || true
+        pkill -f "node.*frontend" || true
+        cd apps/frontend/e2e_test
+        docker compose -f docker-compose.test.yml down
+
+  terraform-apply:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    needs: [terraform-plan, docker-build-backend, docker-build-billing, docker-build-outbound, docker-build-frontend, test-backend, test-billing, test-frontend, backend-e2e-tests, billing-e2e-tests, frontend-e2e-tests]
+    environment: ${{ inputs.deploy_environment }}
+    concurrency:
+      group: deploy-${{ inputs.deploy_environment }}
+      cancel-in-progress: false
+    
+    steps:
+    - name: Checkout simple-relay repository
+      uses: actions/checkout@v4
+      with:
+        repository: wuyq0808/simple-relay
+        ref: ${{ inputs.simple_relay_ref }}
+        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: Google Auth
+      uses: 'google-github-actions/auth@v2'
+      with:
+        credentials_json: '${{ secrets.GCP_SA_KEY }}'
+
+    - name: Setup Google Cloud SDK
+      uses: 'google-github-actions/setup-gcloud@v2'
+
+    - name: Terraform Init
+      working-directory: ./terraform
+      run: |
+        terraform init \
+          -backend-config="bucket=simple-relay-${{ inputs.deploy_environment }}" \
+          -backend-config="prefix=terraform-state"
+
+    - name: Terraform Apply
+      working-directory: ./terraform
+      env:
+        TF_VAR_api_base_url: ${{ secrets.API_BASE_URL }}
+        TF_VAR_official_base_url: ${{ secrets.OFFICIAL_BASE_URL }}
+        TF_VAR_image_tag: ${{ needs.docker-build-backend.outputs.simple_relay_sha }}
+        TF_VAR_service_name: simple-relay
+        TF_VAR_billing_service_name: simple-relay-billing
+        TF_VAR_frontend_service_name: simple-relay-frontend
+        TF_VAR_outbound_service_1_name: simple-relay-outbound-1
+        TF_VAR_outbound_service_2_name: simple-relay-outbound-2
+        TF_VAR_firestore_database_name: simple-relay-db
+        TF_VAR_deploy_environment: ${{ inputs.deploy_environment }}
+        TF_VAR_api_secret_key: ${{ secrets.API_SECRET_KEY }}
+        TF_VAR_resend_api_key: ${{ inputs.deploy_environment == 'production' && secrets.RESEND_API_KEY_PRODUCTION || secrets.RESEND_API_KEY_STAGING }}
+        TF_VAR_resend_from_email: ${{ secrets.RESEND_FROM_EMAIL }}
+        TF_VAR_cookie_secret: ${{ inputs.deploy_environment == 'production' && secrets.COOKIE_SECRET_PRODUCTION || secrets.COOKIE_SECRET_STAGING }}
+        TF_VAR_wechat_app_id: ${{ secrets.WECHAT_APP_ID }}
+        TF_VAR_wechat_mch_id: ${{ secrets.WECHAT_MCH_ID }}
+        TF_VAR_wechat_mch_api_v3_key: ${{ secrets.WECHAT_MCH_API_V3_KEY }}
+        TF_VAR_wechat_mch_serial_no: ${{ secrets.WECHAT_MCH_SERIAL_NO }}
+        TF_VAR_wechat_notify_url: ${{ inputs.deploy_environment == 'production' && secrets.WECHAT_NOTIFY_URL_PRODUCTION || secrets.WECHAT_NOTIFY_URL_STAGING }}
+        TF_VAR_wechat_mch_private_key_base64: ${{ secrets.WECHAT_MCH_PRIVATE_KEY_BASE64 }}
+        TF_VAR_wechat_pay_public_key_base64: ${{ secrets.WECHAT_PAY_PUBLIC_KEY_BASE64 }}
+        TF_VAR_wechat_pay_public_key_id: ${{ secrets.WECHAT_PAY_PUBLIC_KEY_ID }}
+        TF_VAR_wechat_platform_cert_base64: ${{ secrets.WECHAT_PLATFORM_CERT_BASE64 }}
+        TF_VAR_wechat_platform_cert_serial_no: ${{ secrets.WECHAT_PLATFORM_CERT_SERIAL_NO }}
+        TF_VAR_wechat_open_app_id: ${{ secrets.WECHAT_OPEN_APP_ID }}
+        TF_VAR_wechat_open_app_secret: ${{ secrets.WECHAT_OPEN_APP_SECRET }}
+        TF_VAR_wechat_redirect_uri: ${{ inputs.deploy_environment == 'production' && secrets.WECHAT_REDIRECT_URI_PRODUCTION || secrets.WECHAT_REDIRECT_URI_STAGING }}
+      run: terraform apply -input=false -auto-approve -no-color
+
