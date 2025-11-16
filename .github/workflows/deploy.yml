@@ -32,7 +32,7 @@ jobs:
       with:
         repository: wuyq0808/simple-relay
         ref: ${{ inputs.simple_relay_ref }}
-        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+        token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
     - name: Get simple-relay commit SHA
       id: get-sha
@@ -108,7 +108,7 @@ jobs:
       with:
         repository: wuyq0808/simple-relay
         ref: ${{ inputs.simple_relay_ref }}
-        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+        token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
     - name: Get simple-relay commit SHA
       id: get-sha
@@ -147,7 +147,7 @@ jobs:
       with:
         repository: wuyq0808/simple-relay
         ref: ${{ inputs.simple_relay_ref }}
-        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+        token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
     - name: Get simple-relay commit SHA
       id: get-sha
@@ -186,7 +186,7 @@ jobs:
       with:
         repository: wuyq0808/simple-relay
         ref: ${{ inputs.simple_relay_ref }}
-        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+        token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
     - name: Get simple-relay commit SHA
       id: get-sha
@@ -227,7 +227,7 @@ jobs:
       with:
         repository: wuyq0808/simple-relay
         ref: ${{ inputs.simple_relay_ref }}
-        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+        token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
     - name: Get simple-relay commit SHA
       id: get-sha
@@ -265,7 +265,7 @@ jobs:
       with:
         repository: wuyq0808/simple-relay
         ref: ${{ inputs.simple_relay_ref }}
-        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+        token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
     - name: Setup Go
       uses: actions/setup-go@v5
@@ -351,7 +351,7 @@ jobs:
       with:
         repository: wuyq0808/simple-relay
         ref: ${{ inputs.simple_relay_ref }}
-        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+        token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
     - name: Setup Go
       uses: actions/setup-go@v5
@@ -434,7 +434,7 @@ jobs:
       with:
         repository: wuyq0808/simple-relay
         ref: ${{ inputs.simple_relay_ref }}
-        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+        token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
     - name: Setup Go
       uses: actions/setup-go@v5
@@ -460,7 +460,7 @@ jobs:
       with:
         repository: wuyq0808/simple-relay
         ref: ${{ inputs.simple_relay_ref }}
-        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+        token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
     - name: Setup Go
       uses: actions/setup-go@v5
@@ -486,7 +486,7 @@ jobs:
       with:
         repository: wuyq0808/simple-relay
         ref: ${{ inputs.simple_relay_ref }}
-        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+        token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
     - name: Setup Go
       uses: actions/setup-go@v5
@@ -512,7 +512,7 @@ jobs:
       with:
         repository: wuyq0808/simple-relay
         ref: ${{ inputs.simple_relay_ref }}
-        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+        token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
     - name: Setup Go
       uses: actions/setup-go@v5
@@ -535,7 +535,7 @@ jobs:
       with:
         repository: wuyq0808/simple-relay
         ref: ${{ inputs.simple_relay_ref }}
-        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+        token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
     - name: Setup Go
       uses: actions/setup-go@v5
@@ -558,7 +558,7 @@ jobs:
       with:
         repository: wuyq0808/simple-relay
         ref: ${{ inputs.simple_relay_ref }}
-        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+        token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
     - name: Setup Node.js
       uses: actions/setup-node@v4
@@ -585,7 +585,7 @@ jobs:
       with:
         repository: wuyq0808/simple-relay
         ref: ${{ inputs.simple_relay_ref }}
-        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+        token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
     - name: Setup Node.js
       uses: actions/setup-node@v4
@@ -616,7 +616,7 @@ jobs:
       with:
         repository: wuyq0808/simple-relay
         ref: ${{ inputs.simple_relay_ref }}
-        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+        token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
     - name: Setup Node.js
       uses: actions/setup-node@v4
@@ -716,7 +716,7 @@ jobs:
       with:
         repository: wuyq0808/simple-relay
         ref: ${{ inputs.simple_relay_ref }}
-        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+        token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3

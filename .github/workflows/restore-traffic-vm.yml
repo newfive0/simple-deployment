@@ -1,0 +1,127 @@
+name: Restore Traffic VM from Snapshot
+
+on:
+  workflow_dispatch:
+    inputs:
+      vm_name:
+        description: 'Name for the new VM'
+        required: true
+        default: 'traffic-vm'
+      machine_type:
+        description: 'Machine type for the VM'
+        required: true
+        default: 'e2-micro'
+      subnet:
+        description: 'Subnet to use'
+        required: true
+        default: 'outbound-egress-subnet-1'
+      simple_traffic_ref:
+        description: 'Branch or tag from simple-traffic to use'
+        required: false
+        default: 'main'
+        type: string
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  SERVICE: simple-traffic
+  REGION: us-central1
+  ZONE: us-central1-a
+
+jobs:
+  restore-from-snapshot:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout simple-traffic repository
+      uses: actions/checkout@v4
+      with:
+        repository: wuyq0808/simple-traffic
+        ref: ${{ inputs.simple_traffic_ref }}
+        token: ${{ secrets.REPO_ACCESS_TOKEN }}
+
+    - name: Google Auth
+      id: auth
+      uses: 'google-github-actions/auth@v2'
+      with:
+        credentials_json: '${{ secrets.GCP_SA_KEY }}'
+
+    - name: Find Latest Snapshot
+      id: snapshot
+      run: |
+        SNAPSHOT_NAME=$(bash ./github_action_scripts/find-latest-snapshot.sh)
+        echo "SNAPSHOT_NAME=$SNAPSHOT_NAME" >> $GITHUB_ENV
+        echo "snapshot_name=$SNAPSHOT_NAME" >> $GITHUB_OUTPUT
+
+    - name: Setup Firewall Rules
+      run: |
+        bash ./github_action_scripts/setup-firewall-rules.sh \
+          "${{ github.event.inputs.subnet }}" \
+          "${{ env.REGION }}"
+
+    - name: Create VM from Snapshot
+      id: create-vm
+      run: |
+        SNAPSHOT_NAME="${{ steps.snapshot.outputs.snapshot_name }}"
+
+        bash ./github_action_scripts/create-vm-from-snapshot.sh \
+          "${{ github.event.inputs.vm_name }}" \
+          "${{ github.event.inputs.machine_type }}" \
+          "${{ github.event.inputs.subnet }}" \
+          "${{ env.ZONE }}" \
+          "$SNAPSHOT_NAME" \
+          "${{ env.PROJECT_ID }}"
+
+        # Extract OS_LOGIN_USER from service account
+        SA_EMAIL="github-actions@${{ env.PROJECT_ID }}.iam.gserviceaccount.com"
+        SA_NUMERIC_ID=$(gcloud iam service-accounts describe $SA_EMAIL --format="value(uniqueId)")
+        OS_LOGIN_USER="sa_${SA_NUMERIC_ID}"
+        echo "OS_LOGIN_USER=$OS_LOGIN_USER" >> $GITHUB_ENV
+
+    - name: Start Traffic Services
+      run: |
+        VM_NAME="${{ github.event.inputs.vm_name }}"
+        OS_LOGIN_USER="${{ env.OS_LOGIN_USER }}"
+
+        # Create service account key file locally
+        echo '${{ secrets.GCP_SA_KEY }}' > /tmp/sa-key.json
+
+        # Copy service account key to VM (if not already present)
+        gcloud compute scp /tmp/sa-key.json ${OS_LOGIN_USER}@${VM_NAME}:/tmp/service-account-key.json --zone=${{ env.ZONE }} --tunnel-through-iap --strict-host-key-checking=no || echo "Key may already exist"
+
+        # Start services using script
+        bash ./github_action_scripts/start-traffic-services.sh \
+          "$VM_NAME" \
+          "${{ env.ZONE }}" \
+          "$OS_LOGIN_USER" \
+          "${{ env.PROJECT_ID }}" \
+          "${{ env.REGION }}" \
+          "${{ env.SERVICE }}"
+
+        # Clean up local key file
+        rm -f /tmp/sa-key.json
+
+    - name: Setup Traffic Scripts and Rules
+      run: |
+        VM_NAME="${{ github.event.inputs.vm_name }}"
+        OS_LOGIN_USER="${{ env.OS_LOGIN_USER }}"
+
+        # Set account for OS Login SSH
+        gcloud config set account github-actions@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
+
+        # Copy all traffic files to VM
+        gcloud compute scp --zone=${{ env.ZONE }} --tunnel-through-iap --strict-host-key-checking=no --recurse ./vm-scripts/ ${OS_LOGIN_USER}@${VM_NAME}:/tmp/
+
+        # Setup traffic scripts using script
+        bash ./github_action_scripts/setup-traffic-scripts.sh \
+          "$VM_NAME" \
+          "${{ env.ZONE }}" \
+          "/tmp/vm-scripts" \
+          "$OS_LOGIN_USER"
+
+    - name: Start Traffic Proxy
+      run: |
+        bash ./github_action_scripts/start-restore-traffic-proxy.sh \
+          "${{ github.event.inputs.vm_name }}" \
+          "${{ env.ZONE }}" \
+          "${{ env.OS_LOGIN_USER }}" \
+          "${{ env.PROJECT_ID }}"

@@ -25,7 +25,7 @@ jobs:
       with:
         repository: wuyq0808/simple-relay
         ref: ${{ inputs.simple_relay_ref || 'main' }}
-        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+        token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
     - name: Google Auth
       uses: 'google-github-actions/auth@v2'
@@ -63,7 +63,7 @@ jobs:
       with:
         repository: wuyq0808/simple-relay
         ref: ${{ inputs.simple_relay_ref || 'main' }}
-        token: ${{ secrets.SIMPLE_RELAY_ACCESS_TOKEN }}
+        token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
