@@ -90,8 +90,8 @@ jobs:
         TF_VAR_wechat_pay_public_key_id: ${{ secrets.WECHAT_PAY_PUBLIC_KEY_ID }}
         TF_VAR_wechat_platform_cert_base64: ${{ secrets.WECHAT_PLATFORM_CERT_BASE64 }}
         TF_VAR_wechat_platform_cert_serial_no: ${{ secrets.WECHAT_PLATFORM_CERT_SERIAL_NO }}
-        TF_VAR_wechat_open_app_id: ${{ secrets.WECHAT_OPEN_APP_ID }}
-        TF_VAR_wechat_open_app_secret: ${{ secrets.WECHAT_OPEN_APP_SECRET }}
+        TF_VAR_wechat_open_app_id: ${{ inputs.deploy_environment == 'production' && secrets.WECHAT_OPEN_APP_ID || secrets.WECHAT_OPEN_APP_ID_STAGING }}
+        TF_VAR_wechat_open_app_secret: ${{ inputs.deploy_environment == 'production' && secrets.WECHAT_OPEN_APP_SECRET || secrets.WECHAT_OPEN_APP_SECRET_STAGING }}
         TF_VAR_wechat_redirect_uri: ${{ inputs.deploy_environment == 'production' && secrets.WECHAT_REDIRECT_URI_PRODUCTION || secrets.WECHAT_REDIRECT_URI_STAGING }}
       run: terraform plan -input=false -no-color
 
@@ -765,8 +765,8 @@ jobs:
         TF_VAR_wechat_pay_public_key_id: ${{ secrets.WECHAT_PAY_PUBLIC_KEY_ID }}
         TF_VAR_wechat_platform_cert_base64: ${{ secrets.WECHAT_PLATFORM_CERT_BASE64 }}
         TF_VAR_wechat_platform_cert_serial_no: ${{ secrets.WECHAT_PLATFORM_CERT_SERIAL_NO }}
-        TF_VAR_wechat_open_app_id: ${{ secrets.WECHAT_OPEN_APP_ID }}
-        TF_VAR_wechat_open_app_secret: ${{ secrets.WECHAT_OPEN_APP_SECRET }}
+        TF_VAR_wechat_open_app_id: ${{ inputs.deploy_environment == 'production' && secrets.WECHAT_OPEN_APP_ID || secrets.WECHAT_OPEN_APP_ID_STAGING }}
+        TF_VAR_wechat_open_app_secret: ${{ inputs.deploy_environment == 'production' && secrets.WECHAT_OPEN_APP_SECRET || secrets.WECHAT_OPEN_APP_SECRET_STAGING }}
         TF_VAR_wechat_redirect_uri: ${{ inputs.deploy_environment == 'production' && secrets.WECHAT_REDIRECT_URI_PRODUCTION || secrets.WECHAT_REDIRECT_URI_STAGING }}
       run: terraform apply -input=false -auto-approve -no-color
 
