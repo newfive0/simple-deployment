@@ -68,6 +68,7 @@ jobs:
       env:
         TF_VAR_api_base_url: ${{ secrets.API_BASE_URL }}
         TF_VAR_official_base_url: ${{ secrets.OFFICIAL_BASE_URL }}
+        TF_VAR_gemini_official_base_url: ${{ secrets.GEMINI_OFFICIAL_BASE_URL }}
         TF_VAR_image_tag: ${{ steps.get-sha.outputs.sha }}
         TF_VAR_service_name: simple-relay
         TF_VAR_billing_service_name: simple-relay-billing
@@ -305,6 +306,8 @@ jobs:
         OUTBOUND_SERVICE_URL_1=http://127.0.0.1:9001 \
         BILLING_SERVICE_URL=http://127.0.0.1:9002 \
         GCE_METADATA_HOST=127.0.0.1:9003 \
+        OFFICIAL_BASE_URL=https://api.anthropic.com \
+        GEMINI_OFFICIAL_BASE_URL=https://generativelanguage.googleapis.com \
         go run ./cmd &
 
         # Wait for backend to be ready
@@ -323,6 +326,10 @@ jobs:
 
     - name: Run E2E Tests
       working-directory: ./apps/backend
+      env:
+        FIRESTORE_EMULATOR_HOST: localhost:8080
+        OFFICIAL_BASE_URL: https://api.anthropic.com
+        GEMINI_OFFICIAL_BASE_URL: https://generativelanguage.googleapis.com
       run: go test -v ./e2e_test/... -count=1
 
     - name: Stop Services
@@ -743,6 +750,7 @@ jobs:
       env:
         TF_VAR_api_base_url: ${{ secrets.API_BASE_URL }}
         TF_VAR_official_base_url: ${{ secrets.OFFICIAL_BASE_URL }}
+        TF_VAR_gemini_official_base_url: ${{ secrets.GEMINI_OFFICIAL_BASE_URL }}
         TF_VAR_image_tag: ${{ needs.docker-build-backend.outputs.simple_relay_sha }}
         TF_VAR_service_name: simple-relay
         TF_VAR_billing_service_name: simple-relay-billing
