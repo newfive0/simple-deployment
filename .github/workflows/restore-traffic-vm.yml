@@ -10,7 +10,7 @@ on:
       machine_type:
         description: 'Machine type for the VM'
         required: true
-        default: 'e2-micro'
+        default: 'e2-medium'
       subnet:
         description: 'Subnet to use'
         required: true
