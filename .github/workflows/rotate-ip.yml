@@ -1,4 +1,4 @@
-name: Rotate/Remove Outbound IP
+name: Rotate Outbound IP
 
 on:
   workflow_dispatch:
