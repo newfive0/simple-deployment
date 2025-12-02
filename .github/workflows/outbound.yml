@@ -111,3 +111,6 @@ jobs:
         TF_VAR_artifact_registry_repository: simple-relay
         TF_VAR_official_base_url: ${{ secrets.OFFICIAL_BASE_URL }}
       run: terraform apply -input=false -auto-approve -no-color
+
+    - name: Save Image Tag to GCS
+      run: echo "${{ needs.docker-build-outbound.outputs.simple_relay_sha }}" | gsutil cp - gs://simple-relay-outbound-terraform-state/outbound/latest-image-tag.txt
