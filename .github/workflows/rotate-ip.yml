@@ -38,7 +38,7 @@ env:
 
 jobs:
   rotate-remove-ip:
-    name: Rotate/Remove Outbound IP
+    name: Rotate Outbound IP
     runs-on: ubuntu-latest
     concurrency:
       group: deploy-outbound
