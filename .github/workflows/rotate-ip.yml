@@ -1,0 +1,109 @@
+name: Rotate/Remove Outbound IP
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - rotate
+          - remove
+          - both
+      outbound:
+        description: 'Outbound service number (1, 2, 3, or 4)'
+        required: true
+        type: choice
+        options:
+          - '1'
+          - '2'
+          - '3'
+          - '4'
+      version:
+        description: 'Specific IP version to remove (optional, only for remove action)'
+        required: false
+        type: string
+      dry_run:
+        description: 'Dry run mode (preview changes without applying)'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  TF_VERSION: '1.5.0'
+  TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: us-central1
+
+jobs:
+  rotate-remove-ip:
+    name: Rotate/Remove Outbound IP
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-outbound
+      cancel-in-progress: false
+
+    steps:
+    - name: Checkout simple-relay-outbound repository
+      uses: actions/checkout@v4
+      with:
+        repository: wuyq0808/simple-relay-outbound
+        ref: main
+        token: ${{ secrets.REPO_ACCESS_TOKEN }}
+        fetch-depth: 0
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        pip install --upgrade pip
+        pip install google-cloud-firestore google-auth
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: Google Auth
+      uses: 'google-github-actions/auth@v2'
+      with:
+        credentials_json: '${{ secrets.GCP_SA_KEY }}'
+
+    - name: Setup Google Cloud SDK
+      uses: 'google-github-actions/setup-gcloud@v2'
+
+    - name: Setup Git
+      run: |
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        git config --global user.name "GitHub Actions"
+
+    - name: Run Rotate IP
+      if: ${{ inputs.action == 'rotate' || inputs.action == 'both' }}
+      working-directory: ./scripts
+      run: |
+        python3 rotate-outbound-ip-ci.py \
+          --outbound ${{ inputs.outbound }} \
+          ${{ inputs.dry_run && '--dry-run' || '' }}
+
+    - name: Run Remove IP
+      if: ${{ inputs.action == 'remove' || inputs.action == 'both' }}
+      working-directory: ./scripts
+      run: |
+        python3 remove-outbound-ip-ci.py \
+          --outbound ${{ inputs.outbound }} \
+          ${{ inputs.version && format('--version {0}', inputs.version) || '' }} \
+          ${{ inputs.dry_run && '--dry-run' || '' }}
+
+    - name: Summary
+      if: always()
+      run: |
+        echo "## Outbound IP Operation Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Action:** ${{ inputs.action }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Outbound Service:** ${{ inputs.outbound }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Version (if remove):** ${{ inputs.version || 'auto-detect oldest' }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Dry Run:** ${{ inputs.dry_run }}" >> $GITHUB_STEP_SUMMARY
