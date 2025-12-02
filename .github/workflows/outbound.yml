@@ -3,8 +3,8 @@ name: Outbound Deployment
 on:
   workflow_dispatch:
     inputs:
-      simple_relay_ref:
-        description: 'Branch or tag from simple-relay to deploy'
+      simple_relay_outbound_ref:
+        description: 'Branch or tag from simple-relay-outbound to deploy'
         required: false
         default: 'main'
         type: string
@@ -22,14 +22,14 @@ jobs:
       simple_relay_sha: ${{ steps.get-sha.outputs.sha }}
 
     steps:
-    - name: Checkout simple-relay repository
+    - name: Checkout simple-relay-outbound repository
       uses: actions/checkout@v4
       with:
-        repository: wuyq0808/simple-relay
-        ref: ${{ inputs.simple_relay_ref || 'main' }}
+        repository: wuyq0808/simple-relay-outbound
+        ref: ${{ inputs.simple_relay_outbound_ref || 'main' }}
         token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
-    - name: Get simple-relay commit SHA
+    - name: Get simple-relay-outbound commit SHA
       id: get-sha
       run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
@@ -50,7 +50,7 @@ jobs:
         password: ${{ secrets.GCP_SA_KEY }}
 
     - name: Build and Push Outbound Container
-      working-directory: ./apps/outbound
+      working-directory: ./apps
       run: |-
         docker build --platform linux/amd64 -t "${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/simple-relay/simple-relay-outbound:${{ steps.get-sha.outputs.sha }}" .
         docker push "${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/simple-relay/simple-relay-outbound:${{ steps.get-sha.outputs.sha }}"
@@ -64,11 +64,11 @@ jobs:
       cancel-in-progress: false
 
     steps:
-    - name: Checkout simple-relay repository
+    - name: Checkout simple-relay-outbound repository
       uses: actions/checkout@v4
       with:
-        repository: wuyq0808/simple-relay
-        ref: ${{ inputs.simple_relay_ref || 'main' }}
+        repository: wuyq0808/simple-relay-outbound
+        ref: ${{ inputs.simple_relay_outbound_ref || 'main' }}
         token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
     - name: Setup Terraform
@@ -85,18 +85,18 @@ jobs:
       uses: 'google-github-actions/setup-gcloud@v2'
 
     - name: Terraform Init
-      working-directory: ./terraform/outbound
+      working-directory: ./terraform
       run: |
         terraform init \
           -backend-config="bucket=simple-relay-outbound-terraform-state" \
           -backend-config="prefix=outbound"
 
     - name: Terraform Validate
-      working-directory: ./terraform/outbound
+      working-directory: ./terraform
       run: terraform validate
 
     - name: Terraform Plan
-      working-directory: ./terraform/outbound
+      working-directory: ./terraform
       env:
         TF_VAR_image_tag: ${{ needs.docker-build-outbound.outputs.simple_relay_sha }}
         TF_VAR_artifact_registry_repository: simple-relay
@@ -104,7 +104,7 @@ jobs:
       run: terraform plan -input=false -no-color
 
     - name: Terraform Apply
-      working-directory: ./terraform/outbound
+      working-directory: ./terraform
       env:
         TF_VAR_image_tag: ${{ needs.docker-build-outbound.outputs.simple_relay_sha }}
         TF_VAR_artifact_registry_repository: simple-relay
