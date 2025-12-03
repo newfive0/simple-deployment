@@ -84,19 +84,19 @@ jobs:
         echo "https://x-access-token:${{ secrets.OUTBOUND_REPO_TOKEN }}@github.com" > ~/.git-credentials
         chmod 600 ~/.git-credentials
 
-    - name: Run Rotate IP
+    - name: Run Add New IP
       if: ${{ inputs.action == 'rotate' || inputs.action == 'both' }}
       working-directory: ./scripts
       run: |
-        python3 rotate-outbound-ip-ci.py \
+        python3 add-new-ip-ci.py \
           --outbound ${{ inputs.outbound }} \
           ${{ inputs.dry_run && '--dry-run' || '' }}
 
-    - name: Run Remove IP
+    - name: Run Remove Old IP
       if: ${{ inputs.action == 'remove' || inputs.action == 'both' }}
       working-directory: ./scripts
       run: |
-        python3 remove-outbound-ip-ci.py \
+        python3 remove-old-ip-ci.py \
           --outbound ${{ inputs.outbound }} \
           ${{ inputs.version && format('--version {0}', inputs.version) || '' }} \
           ${{ inputs.dry_run && '--dry-run' || '' }}
