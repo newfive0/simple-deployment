@@ -50,7 +50,7 @@ jobs:
       with:
         repository: wuyq0808/simple-relay-outbound
         ref: main
-        token: ${{ secrets.REPO_ACCESS_TOKEN }}
+        token: ${{ secrets.OUTBOUND_REPO_TOKEN }}
         fetch-depth: 0
 
     - name: Setup Python
@@ -80,6 +80,9 @@ jobs:
       run: |
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
         git config --global user.name "GitHub Actions"
+        git config --global credential.helper store
+        echo "https://x-access-token:${{ secrets.OUTBOUND_REPO_TOKEN }}@github.com" > ~/.git-credentials
+        chmod 600 ~/.git-credentials
 
     - name: Run Rotate IP
       if: ${{ inputs.action == 'rotate' || inputs.action == 'both' }}
