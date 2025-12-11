@@ -92,6 +92,20 @@ jobs:
           "${{ github.event.inputs.vm_name }}" \
           "${{ env.ZONE }}"
 
+    - name: Setup Browser Environment on VM
+      run: |
+        VM_NAME="${{ github.event.inputs.vm_name }}"
+
+        # Copy setup script to VM
+        gcloud compute scp --zone=${{ env.ZONE }} ./vm-scripts/setup-browser-env.sh $VM_NAME:/tmp/setup-browser-env.sh
+
+        # Execute setup script
+        gcloud compute ssh $VM_NAME --zone=${{ env.ZONE }} --command="
+          sudo mv /tmp/setup-browser-env.sh /opt/traffic/setup-browser-env.sh
+          sudo chmod +x /opt/traffic/setup-browser-env.sh
+          sudo /opt/traffic/setup-browser-env.sh
+        "
+
     - name: Create Clean Dependencies Snapshot
       run: |
         bash ./github_action_scripts/create-snapshot.sh \
